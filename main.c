@@ -8,7 +8,8 @@ static void repl() {
   for (;;) {
     printf("> ");
 
-    if (!fgets(line, sizeof(line), stdin)) {
+    fgets(line, sizeof(line), stdin);
+    if (line[0] == '\r' || line[0] == '\n') {
       printf("\n");
       break;
     }
