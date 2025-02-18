@@ -27,7 +27,15 @@ typedef struct {
   int depth;
 } Local;
 
+typedef enum {
+  TYPE_FUNCTION,
+  TYPE_SCRIPT,
+} FunctionType;
+
 typedef struct Compiler {
+  ObjFunction *function;
+  FunctionType type;
+
   Local locals[UINT8_COUNT];
   int localCount;
   int scopeDepth;
@@ -59,7 +67,7 @@ typedef struct {
 
 Chunk *compilingChunk;
 
-static Chunk *currentChunk() { return compilingChunk; }
+static Chunk *currentChunk() { return &current->function->chunk; }
 
 static void errorAt(Token *token, const char *message) {
   if (parser.panicMode)
@@ -156,14 +164,17 @@ static uint8_t makeConstant(Value value) {
   return (uint8_t)constant;
 }
 
-static void endCompiler() {
+static ObjFunction* endCompiler() {
   emitReturn();
+  ObjFunction* function = current->function;
 
 #ifdef DEBUG_PRINT_CODE
   if (!parser.hadError) {
-    disassembleChunk(currentChunk(), "code");
+    disassembleChunk(currentChunk(), function->name != NULL ? function->name->chars : "<script>");
   }
 #endif
+
+  return function;
 }
 
 static void beginScope() { current->scopeDepth++; }
@@ -316,7 +327,7 @@ static void forStatement() {
   statement();
   emitLoop(loopStart);
 
-  if (exitJump != - 1) {
+  if (exitJump != -1) {
     patchJump(exitJump);
     emitByte(OP_POP);
   }
@@ -435,10 +446,18 @@ static void patchJump(int offset) {
   currentChunk()->code[offset + 1] = jump & 0xff;
 }
 
-static void initCompiler(Compiler *compiler) {
+static void initCompiler(Compiler *compiler, FunctionType type) {
+  compiler->function = NULL;
+  compiler->type = type;
   compiler->localCount = 0;
   compiler->scopeDepth = 0;
+  current->function = newFunction();
   current = compiler;
+
+  Local* local = &current->locals[current->localCount++];
+  local->depth = 0;
+  local->name.start = 0;
+  local->name.length = 0;
 }
 
 static void number(bool canAssign) {
@@ -661,7 +680,7 @@ static void and_(bool canAssing) {
 bool compile(const char *source, Chunk *chunk) {
   initScanner(source);
   Compiler compiler;
-  initCompiler(&compiler);
+  initCompiler(&compiler, TYPE_SCRIPT);
 
   compilingChunk = chunk;
 
